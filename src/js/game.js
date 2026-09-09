@@ -11,7 +11,8 @@ const DIRS = {
 const OPPOSITE = { left: 'right', right: 'left', up: 'down', down: 'up' };
 
 const PACMAN_SPEED = 0.125; // 1/8 celda/frame -> alinea cada 8 frames
-const GHOST_SPEED = 0.1;    // 1/10 celda/frame
+const GHOST_SPEED = 0.1;    // pinky, inky, clyde
+const BLINKY_SPEED = 0.12;  // blinky: el agresivo
 
 // Crea una partida nueva. Copia MAZE (pristino) a game.grid para poder comer
 // dots sin destruir el original, y reiniciar.
@@ -40,7 +41,7 @@ function createGame() {
       x: g.x,
       y: g.y,
       dir: 'up',
-      speed: GHOST_SPEED,
+      speed: g.kind === 'blinky' ? BLINKY_SPEED : GHOST_SPEED,
       kind: g.kind,
       phase: 'waiting', // 'waiting' | 'exiting' | 'active'
       exitDelay: g.exitDelay, // segundos restantes; solo descuenta en 'waiting'
@@ -136,7 +137,14 @@ function ghostTarget( game, g ) {
     const ay = py + d.y * 2;
     return { x: 2 * ax - Math.round( b.x ), y: 2 * ay - Math.round( b.y ) };
   }
-  return null; // kind aun sin objetivo propio (clyde llega en su paso)
+  if ( g.kind === 'clyde' ) {
+    // Timido: persigue de lejos, pero a 8 celdas o menos (Manhattan)
+    // se retira hacia su esquina inferior izquierda (0, 30).
+    const dist = Math.abs( g.x - px ) + Math.abs( g.y - py );
+    if ( dist > 8 ) return { x: px, y: py };
+    return { x: 0, y: 30 };
+  }
+  return null; // kind desconocido: deambular aleatorio
 }
 
 function decideGhost( game, g ) {
