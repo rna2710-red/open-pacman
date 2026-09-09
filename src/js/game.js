@@ -112,9 +112,36 @@ function movePacman( game ) {
   wrapTunnel( p, width );
 }
 
+// Objetivo (en celdas) de cada fantasma segun su personalidad clasica.
+// Se recalcula en cada celda alineada (decideGhost solo corre alineado).
+function ghostTarget( game, g ) {
+  const p = game.pacman;
+  const px = Math.round( p.x );
+  const py = Math.round( p.y );
+  const d = DIRS[ p.dir ];
+
+  if ( g.kind === 'blinky' ) {
+    // Persecucion directa: la celda de Pac-Man.
+    return { x: px, y: py };
+  }
+  if ( g.kind === 'pinky' ) {
+    // Emboscada: 4 celdas por delante de la direccion de Pac-Man
+    // (sin el bug historico del vector 'arriba').
+    return { x: px + d.x * 4, y: py + d.y * 4 };
+  }
+  if ( g.kind === 'inky' ) {
+    // Flanqueo: 2·(pacman + 2·dir) − pos(blinky).
+    const b = game.ghosts.find( ( o ) => o.kind === 'blinky' );
+    const ax = px + d.x * 2; // ancla: 2 celdas delante de Pac-Man
+    const ay = py + d.y * 2;
+    return { x: 2 * ax - Math.round( b.x ), y: 2 * ay - Math.round( b.y ) };
+  }
+  return null; // kind aun sin objetivo propio (clyde llega en su paso)
+}
+
 function decideGhost( game, g ) {
   const grid = game.grid;
-  const p = game.pacman;
+  const target = ghostTarget( game, g );
 
   const options = Object.keys( DIRS ).filter(
     ( dir ) => dir !== OPPOSITE[ g.dir ] && canMove( grid, g.x, g.y, dir, 'ghost' )
@@ -122,25 +149,27 @@ function decideGhost( game, g ) {
   // Sin salida (callejon): permitir el giro de 180.
   const choices = options.length ? options : [ '' + OPPOSITE[ g.dir ] ];
 
-  if ( g.kind === 'hunter' ) {
-    const px = Math.round( p.x );
-    const py = Math.round( p.y );
-    let best = choices[ 0 ];
-    let bestDist = Infinity;
-    for ( const dir of choices ) {
-      const d = DIRS[ dir ];
-      const nx = g.x + d.x;
-      const ny = g.y + d.y;
-      const dist = Math.abs( nx - px ) + Math.abs( ny - py );
-      if ( dist < bestDist ) {
-        bestDist = dist;
-        best = dir;
-      }
-    }
-    g.dir = best;
-  } else {
+  if ( !target ) {
+    // Sin personalidad dirigida aun: deambular aleatorio.
     g.dir = choices[ Math.floor( Math.random() * choices.length ) ];
+    return;
   }
+
+  // Elegir la direccion (sin reversa) que mas acorta la distancia
+  // Manhattan desde la celda vecina al objetivo.
+  let best = choices[ 0 ];
+  let bestDist = Infinity;
+  for ( const dir of choices ) {
+    const d = DIRS[ dir ];
+    const nx = g.x + d.x;
+    const ny = g.y + d.y;
+    const dist = Math.abs( nx - target.x ) + Math.abs( ny - target.y );
+    if ( dist < bestDist ) {
+      bestDist = dist;
+      best = dir;
+    }
+  }
+  g.dir = best;
 }
 
 // Geometria fija de la salida de la jaula (MAZE_STR filas 11-14).
