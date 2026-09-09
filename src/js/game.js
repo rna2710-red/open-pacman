@@ -42,6 +42,8 @@ function createGame() {
       dir: 'up',
       speed: GHOST_SPEED,
       kind: g.kind,
+      phase: 'waiting', // 'waiting' | 'exiting' | 'active'
+      exitDelay: g.exitDelay, // segundos restantes; solo descuenta en 'waiting'
     } ) ),
   };
 }
@@ -141,9 +143,50 @@ function decideGhost( game, g ) {
   }
 }
 
+// Geometria fija de la salida de la jaula (MAZE_STR filas 11-14).
+const EXIT_COL_LEFT = 13; // columnas de subida (justo bajo la puerta)
+const EXIT_COL_RIGHT = 14;
+const EXIT_ROW = 11; // fila sobre la puerta: fin del guion, inicio de la IA
+
+// Salida guionizada de la jaula: en la fila del nacimiento (14) alinearse en
+// horizontal a la columna 13 o 14, subir por la puerta hasta la fila 11 y
+// pasar a 'active'. Usa solo geometria fija (no decideGhost ni colisiones):
+// ningun fantasma puede quedar atrapado dentro.
+function stepExit( g ) {
+  if ( g.x < EXIT_COL_LEFT - 1e-3 ) {
+    g.dir = 'right';
+    g.x = Math.min( g.x + g.speed, EXIT_COL_LEFT );
+  } else if ( g.x > EXIT_COL_RIGHT + 1e-3 ) {
+    g.dir = 'left';
+    g.x = Math.max( g.x - g.speed, EXIT_COL_RIGHT );
+  } else if ( g.y > EXIT_ROW + 1e-3 ) {
+    g.dir = 'up';
+    g.y = Math.max( g.y - g.speed, EXIT_ROW );
+  } else {
+    g.x = Math.round( g.x );
+    g.y = EXIT_ROW;
+    g.dir = 'up';
+    g.phase = 'active';
+  }
+}
+
 function moveGhost( game, g ) {
   const grid = game.grid;
   const width = grid[ 0 ].length;
+
+  // Fase 'waiting': quieto en la jaula hasta expirar su retardo
+  // (1/60 s por frame, solo durante state 'playing').
+  if ( g.phase === 'waiting' ) {
+    g.exitDelay -= 1 / 60;
+    if ( g.exitDelay <= 0 ) g.phase = 'exiting';
+    return;
+  }
+
+  // Fase 'exiting': salida guionizada por la puerta.
+  if ( g.phase === 'exiting' ) {
+    stepExit( g );
+    return;
+  }
 
   if ( aligned( g.x ) && aligned( g.y ) ) {
     g.x = Math.round( g.x );
@@ -165,9 +208,12 @@ function resetPositions( game ) {
   p.dir = 'left';
   p.nextDir = null;
   game.ghosts.forEach( ( g, i ) => {
-    g.x = GHOST_STARTS[ i ].x;
-    g.y = GHOST_STARTS[ i ].y;
+    const s = GHOST_STARTS[ i ];
+    g.x = s.x;
+    g.y = s.y;
     g.dir = 'up';
+    g.phase = 'waiting';
+    g.exitDelay = s.exitDelay; // el escalonado 0/2/4/6 se reinicia
   } );
 }
 
