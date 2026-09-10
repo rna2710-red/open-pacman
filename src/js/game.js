@@ -12,7 +12,8 @@ const OPPOSITE = { left: 'right', right: 'left', up: 'down', down: 'up' };
 
 const PACMAN_SPEED = 0.125; // 1/8 celda/frame -> alinea cada 8 frames
 const GHOST_SPEED = 0.1;    // pinky, inky, clyde
-const BLINKY_SPEED = 0.12;  // blinky: el agresivo
+const BLINKY_SPEED = 0.12;  // blinky: el agresivo (no cae en cada centro de
+                            // celda por frame; moveGhost avanza por centros)
 
 // Crea una partida nueva. Copia MAZE (pristino) a game.grid para poder comer
 // dots sin destruir el original, y reiniciar.
@@ -225,17 +226,41 @@ function moveGhost( game, g ) {
     return;
   }
 
-  if ( aligned( g.x ) && aligned( g.y ) ) {
-    g.x = Math.round( g.x );
-    g.y = Math.round( g.y );
-    decideGhost( game, g );
-    if ( !canMove( grid, g.x, g.y, g.dir, 'ghost' ) ) return;
+  // Fase 'active': avanza la distancia del frame por tramos hasta el centro
+  // de cada celda, decidiendo IA en cada uno. Esperar una alineacion "exacta"
+  // solo funciona con velocidades 1/n: con 0.12 el fantasma saltaba cruces
+  // cada 3 celdas, entraba en muros y quedaba atascado (p. ej. en 4,11).
+  let rest = g.speed;
+  while ( rest > 1e-9 ) {
+    if ( aligned( g.x ) && aligned( g.y ) ) {
+      g.x = Math.round( g.x );
+      g.y = Math.round( g.y );
+      decideGhost( game, g );
+      if ( !canMove( grid, g.x, g.y, g.dir, 'ghost' ) ) {
+        // Red de seguridad: reelegir cualquier salida real si la IA propuso
+        // una bloqueada. Sin ninguna salida, quedarse quieto.
+        const escape = Object.keys( DIRS ).find(
+          ( dir ) => canMove( grid, g.x, g.y, dir, 'ghost' )
+        );
+        if ( !escape ) return;
+        g.dir = escape;
+      }
+    }
+    const d = DIRS[ g.dir ];
+    const along = d.x !== 0 ? g.x : g.y;
+    // ( d.x + d.y ) vale 1 o -1 segun el eje positivo o negativo. Si el
+    // fantasma esta justo en un centro (recien alineado), el tramo es la
+    // celda completa para no avanzar 0 y buclear el bucle.
+    const raw = ( d.x + d.y ) > 0
+      ? Math.ceil( along ) - along
+      : along - Math.floor( along );
+    const dist = raw < 1e-9 ? 1 : raw;
+    const step = Math.min( rest, dist );
+    g.x += d.x * step;
+    g.y += d.y * step;
+    rest -= step;
+    wrapTunnel( g, width );
   }
-
-  const d = DIRS[ g.dir ];
-  g.x += d.x * g.speed;
-  g.y += d.y * g.speed;
-  wrapTunnel( g, width );
 }
 
 function resetPositions( game ) {
